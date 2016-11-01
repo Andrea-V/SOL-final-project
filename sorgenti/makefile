@@ -1,0 +1,26 @@
+all:
+	mkdir output
+	mkdir lib
+	make mklib
+	gcc -Wall -pedantic -o server server.c -lpthread -lrt
+	gcc -Wall -pedantic -o supervisor supervisor.c -lpthread -Llib -lestab
+	gcc -Wall -pedantic -o client client.c -lpthread
+
+mklib:
+	gcc -Wall -pedantic -c estab.c
+	ar -r lib/libestab.a estab.o
+	rm estab.o
+
+clean:
+	rm client server supervisor
+	touch output/dummy
+	touch lib/dummy
+	rm output/*
+	rm lib/*
+	rmdir output
+	rmdir lib
+
+test:
+	./testsh
+	./misura
+

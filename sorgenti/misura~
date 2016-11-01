@@ -1,0 +1,87 @@
+#!/bin/bash
+
+mkdir tmp
+
+#divido i files, poi seleziono l'ultimo (prendo le stime piu' aggiornate)
+fnum=$(($(csplit -f super_est './output/supervisor_err' '/^$/1' '{*}' | wc -l)-1))
+mv super_est* tmp
+
+#metto uno 0 zero in testa se ce n'e' bisogno
+if (($fnum < 10)); then
+	lastf=super_est0$fnum		
+else
+	lastf=super_est$fnum
+fi
+
+oldIFS=$IFS
+IFS=$' '
+good=0
+bad=0
+errtot=0
+
+#per ogni stima del supervisor, cerco un client con lo stesso id
+#della stima e se lo trovo confronto il secret vero con quello
+#stimato
+while read sline #leggo super_est
+do
+
+	read -a stokens <<< $sline
+	ssecret=${stokens[2]}
+	scid=${stokens[4]}
+	
+	#salvo la lista dei clients
+	ls './output/client_out_'* 1>'tmp/nclients'
+	
+	#cerco il client con lo stesso id
+	while read clname #leggo nclients
+	do
+		read cline < $clname
+		read -a ctokens <<< $cline
+		csecret=${ctokens[3]}
+		ccid=${ctokens[1]}		
+		
+		#se ho trovato il client, calcolo l'errore di stima
+		if [ "$ccid" == "$scid" ]; then
+			err=$(($ssecret-$csecret))
+			
+			#controllo se la stima e' buona			
+			if(($err < 25)); then
+				((good=$good+1))
+			else
+				((bad=$bad+1))
+			fi
+			((errtot=$errtot+${err#-}))
+		fi			
+
+	done < "tmp/nclients"
+done < "tmp/$lastf"
+
+#calcolo e stampo i risultati
+tot=$(($good+$bad))
+if(($tot != 0)); then
+	estot=$(bc -l<<< "scale=2;($errtot/$tot)")
+	perc=$(bc -l<<< "scale=2;($good/$tot)*100")
+fi
+if(($bad != 0)); then
+	esbad=$(bc -l<<< "scale=2;($errtot/$bad)")
+fi
+
+echo "+-------------+"
+echo "| STATISTICHE |"
+echo "+-------------+"
+echo "|"
+echo "|-- Stime totali:  $tot"
+echo "|-- Stime correte: $good"
+if(($tot != 0)); then
+	echo "|-- Percentuale stime corrette: $perc %"
+	echo "|-- Errore totale/Stime totali: $estot"
+fi
+if(($bad != 0)); then
+	echo "|-- Errore totale/Stime errate: $esbad"
+fi
+echo "\ "
+
+#faccio le pulizie e me ne vado
+rm tmp/*
+rmdir tmp
+IFS=$oldIFS

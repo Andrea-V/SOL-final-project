@@ -1,0 +1,121 @@
+#include"utils.c"
+
+int  args_ok(int,char**,int*,int*,int*,int*);
+void precise_sleep(long int);
+int already_took(server_t*,int,int);
+
+/*
+ 	p: server a cui si connettera' il client
+	k: server totali
+	w: messaggi totali da inviare
+	seed: seed da usare per la generazione di numeri pseudo-casuali (opzionale)
+*/
+int main(int argc,char** argv){
+	uint64_t id,tmp;
+	int secret,seed;
+	int p,k,w,i,dst;
+	server_t* servers;	
+	
+	if(!args_ok(argc,argv,&p,&k,&w,&seed))
+		fatal("client args",errno);
+
+	/*genero i valori random*/
+	srandom(seed);
+	id=random64();
+	secret=random()%SECRET_MAX+1;
+
+	printf("CLIENT %"PRIX64" SECRET %d\n",id,secret);
+
+	/*init connessioni con servers*/
+	servers=malloc(p*sizeof(server_t));	
+	for(i=0;i<p;i++){
+		
+		do{
+			dst=random()%k+1;
+		}while(already_took(servers,dst,i));/*devono essere p interi distinti*/
+		
+		init_server_t(&servers[i],dst);
+		
+		/*creo socket*/ 
+		if(-1==(servers[i].socket_fd=socket(AF_UNIX,SOCK_STREAM,0)))
+			fatal("client socket",errno);		
+
+		/*mi connetto*/
+		if(connect(servers[i].socket_fd,(struct sockaddr*)&servers[i].address,sizeof(servers[i].address)))
+			fatal("client connect",errno);
+
+	}
+	
+	/*loop invio messaggi*/
+	for(i=0;i<w;i++){
+
+		dst=servers[random()%p].socket_fd;
+		
+		/*invio il mio id in network byte order*/
+		tmp=htonll(id);		
+		
+		if(-1==write(dst,&tmp,MSG_BUF_MAX))
+			fatal("client write",errno);
+		
+		precise_sleep(secret);
+	}
+	printf("CLIENT %"PRIX64" DONE\n",id);
+
+	/*passo e chiudo*/
+	for(i=0;i<p;i++)
+		close(servers[i].socket_fd);
+	free(servers);
+	return 0;
+}
+/*
+  Controlla che un id del server non sia gia' stato scelto.
+*/
+int already_took(server_t* servers,int id,int n){
+	int i;
+	for(i=0;i<n;i++)
+		if(id==servers[i].id)
+			return TRUE;
+	return FALSE;
+}
+
+/*
+	Controlla e legge gli argomenti del main.
+	p: server a cui si connettera' il client
+	k: server totali
+	w: messaggi totali da inviare
+	seed: seed per i numeri random (opzionale)
+*/
+int args_ok(int argc,char** argv,int* p,int* k,int* w,int* seed){
+	if(!(argc==4||argc==5)){
+		errno=EINVAL;		
+		return FALSE;
+	}
+	*p=atoi(argv[1]);
+	*k=atoi(argv[2]);
+	*w=atoi(argv[3]);
+	*seed=(argc==5)?(atoi(argv[4])):(time(NULL));
+
+	if(*p<1 || *p>=*k || *w <= 3**p){
+		errno=EINVAL;	
+		return FALSE;
+	}
+	return TRUE;
+}
+
+/*
+ Blocca il thread corrente esattamente 'sec' secondi.
+*/
+void precise_sleep(long int msec){
+	struct timespec* req;
+	
+	req=msec_to_ts(msec);
+	while(-1==nanosleep(req,req))
+		switch(errno){
+			case EINTR:
+				continue;
+			default:
+				fatal("nanosec sleep",errno);
+		}
+	free(req);
+}
+

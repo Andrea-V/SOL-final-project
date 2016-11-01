@@ -1,0 +1,21 @@
+#!/bin/bash
+
+./supervisor 8 2>output/supervisor_err 1>/dev/null &
+s_pid=$!
+sleep 2
+
+for i in $(seq 0 9); do
+	now=$(date +%s)	
+	./client 5 8 20 $now 1>output/client_out_$i &
+	./client 5 8 20 $(($now+10)) 1>output/client_out_$(($i+10)) &
+	sleep 1
+done
+
+for i in $(seq 0 5); do
+	kill -SIGINT $s_pid
+	sleep 10
+done
+
+kill -SIGINT $s_pid
+kill -SIGINT $s_pid
+
